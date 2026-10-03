@@ -1,0 +1,10 @@
+{
+  "name": "NOMAD: Unified Cockpit Suite",
+  "description": "Unified GPS Navigation & Telemetry Avionics Suite featuring RoadTrip (v3), Hyperspace (v4), and DIGIT cockpits by BostonyFX (@neurocosm)",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

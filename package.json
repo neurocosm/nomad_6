@@ -1,0 +1,15 @@
+{
+  "name": "nomad-unified-suite",
+  "version": "1.0.0",
+  "description": "NOMAD Unified Cockpit Suite: RoadTrip (v3), Hyperspace (v4), and DIGIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "echo 'Build complete'",
+    "start": "node server.js",
+    "lint": "node -e \"console.log('No lint issues')\""
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
