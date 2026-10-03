@@ -220,16 +220,16 @@ export class AvionicsCore {
 
       // Location & Reverse Geocoding
       roadName: '',
-      fullStreetAddress: 'ACQUIRING TELEMETRY...',
+      fullStreetAddress: '',
       city: '',
       state: '',
       stateCode: '',
       county: '',
       postcode: '',
       country: '',
-      latLonString: '--',
-      cityStateString: '--',
-      countyZipString: '--',
+      latLonString: 'ACQUIRING POSITION...',
+      cityStateString: 'Triangulating Position...',
+      countyZipString: 'GNSS & Wi-Fi Network',
 
       // Route Shields & AASHTO Corridor
       interstateShield: null,
@@ -1024,19 +1024,44 @@ export class AvionicsCore {
     const targetZoom = 18;
 
     try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=${targetZoom}&addressdetails=1&extratags=1&namedetails=1`;
-      let response = null;
       let data = null;
 
+      // 1. Primary: Server-side geocode proxy with User-Agent & caching
       try {
-        response = await fetch(url, {
-          headers: { "User-Agent": "NomadUnifiedCockpitSuite/1.0" }
-        });
-        if (response.ok) {
-          data = await response.json();
+        const proxyResp = await fetch(`/api/geocode?lat=${lat}&lon=${lon}`);
+        if (proxyResp.ok) {
+          data = await proxyResp.json();
         }
-      } catch (netErr) {
-        console.warn("AvionicsCore Nominatim Error:", netErr);
+      } catch (proxyErr) {
+        console.warn("AvionicsCore Geocode Proxy Notice:", proxyErr.message);
+      }
+
+      // 2. Direct Fallback if proxy not accessible
+      if (!data || !data.address) {
+        try {
+          const directResp = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}`);
+          if (directResp.ok) {
+            const pJson = await directResp.json();
+            if (pJson && pJson.features && pJson.features.length > 0) {
+              const p = pJson.features[0].properties;
+              data = {
+                address: {
+                  road: p.street || p.name || "",
+                  house_number: p.housenumber || "",
+                  city: p.city || p.locality || p.district || p.town || "",
+                  county: p.county || "",
+                  state: p.state || "",
+                  postcode: p.postcode || "",
+                  country: p.country || ""
+                },
+                extratags: {},
+                namedetails: {}
+              };
+            }
+          }
+        } catch (dirErr) {
+          console.warn("AvionicsCore Direct Fallback Notice:", dirErr.message);
+        }
       }
 
       let secondaryFallback = null;
