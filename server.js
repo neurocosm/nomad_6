@@ -149,6 +149,25 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
+// Map Style Proxy & Cache (Instant local delivery, zero-CORS, adblock-immune)
+let cachedLibertyStyle = null;
+app.get('/api/map/style/liberty', async (req, res) => {
+  if (cachedLibertyStyle) {
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.json(cachedLibertyStyle);
+  }
+  try {
+    const resp = await fetch('https://tiles.openfreemap.org/styles/liberty');
+    if (!resp.ok) throw new Error(`OFM status: ${resp.status}`);
+    cachedLibertyStyle = await resp.json();
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.json(cachedLibertyStyle);
+  } catch (err) {
+    console.warn('Map style proxy fallback:', err.message);
+    res.status(502).json({ error: 'Failed to fetch liberty style' });
+  }
+});
+
 // Serve static assets with html extension support
 app.use(express.static(__dirname, {
   extensions: ['html']

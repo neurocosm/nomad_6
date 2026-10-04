@@ -27,8 +27,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 
-  <!-- MapLibre GL CSS -->
-  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <!-- MapLibre GL CSS (Local 0ms load) -->
+  <link href="css/maplibre-gl.css" rel="stylesheet" />
   
   <!-- Version Single Source of Truth -->
   <script src="version.js"></script>
@@ -217,10 +217,13 @@
     }
 
     #map {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       border-radius: 11px;
       display: block;
+      z-index: 0;
     }
 
     #map-card.is-starfield-mode #map {
@@ -1842,7 +1845,8 @@
   </div>
 
   <!-- MapLibre GL JS -->
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <!-- MapLibre GL JS (Local 0ms load) -->
+  <script src="js/maplibre-gl.js"></script>
 
   <script>
     // Permanently suppress Chrome's automatic install / shortcut drop-down banner
@@ -1947,7 +1951,7 @@
     let currentThemeIndex = 0;
     try {
       const savedTheme = parseInt(localStorage.getItem('nomad_map_theme_index') || '0', 10);
-      if (!isNaN(savedTheme) && savedTheme >= 0 && savedTheme < mapThemes.length) {
+      if (!isNaN(savedTheme) && savedTheme >= 0 && savedTheme < 2) {
         currentThemeIndex = savedTheme;
       }
     } catch(e) {}
@@ -1957,17 +1961,174 @@
     async function getMapStyleObject(theme) {
       if (theme.url) return theme.url;
 
-      // 1. Natural Light Navigation
+      // 1. Natural Light Navigation: Crisp white roads, mint green parks, vibrant sky-blue waterways, and soft slate-blue buildings
       if (theme.type === 'blueprint-light') {
-        return 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+        if (cachedPositronStyle) return cachedPositronStyle;
+        try {
+          const res = await fetch('/api/map/style/liberty').catch(() => fetch('https://tiles.openfreemap.org/styles/liberty'));
+          if (!res.ok) throw new Error('Failed to fetch base style: ' + res.status);
+          const s = await res.json();
+          s.layers.forEach(l => {
+            if (!l.paint) l.paint = {};
+            // Background
+            if (l.type === 'background') {
+              l.paint['background-color'] = '#f1f5f9';
+            }
+            // Shaded relief raster
+            if (l.type === 'raster') {
+              l.paint['raster-opacity'] = 0.2;
+            }
+            // Vibrant sky-blue water bodies
+            if (l.type === 'fill' && (l['source-layer'] === 'water' || l.id === 'water')) {
+              l.paint['fill-color'] = '#7dd3fc';
+              l.paint['fill-opacity'] = 0.95;
+            }
+            // Clear sky-blue river streams
+            if (l.type === 'line' && (l['source-layer'] === 'waterway' || l.id.includes('waterway'))) {
+              l.paint['line-color'] = '#38bdf8';
+              if (!l.paint['line-width']) l.paint['line-width'] = 2.5;
+            }
+            // Lush spring mint green parks, forests, and nature reserves
+            if (l.type === 'fill' && (l.id.includes('park') || l.id.includes('wood') || l.id.includes('grass') || l['source-layer'] === 'park' || l['source-layer'] === 'landcover')) {
+              l.paint['fill-color'] = '#bbf7d0';
+              l.paint['fill-opacity'] = 0.85;
+              if (l.paint['fill-outline-color']) l.paint['fill-outline-color'] = '#86efac';
+            }
+            if (l.type === 'line' && l.id === 'park_outline') {
+              l.paint['line-color'] = '#86efac';
+            }
+            // Clean road border casings
+            if (l.type === 'line' && l.id.includes('casing')) {
+              l.paint['line-color'] = '#cbd5e1';
+            }
+            // Crisp white road pavement surfaces
+            if (l.type === 'line' && l['source-layer'] === 'transportation' && !l.id.includes('casing')) {
+              l.paint['line-color'] = '#ffffff';
+            }
+            // Soft slate-blue buildings
+            if (l.type === 'fill' && l.id === 'building') {
+              l.paint['fill-color'] = '#c4ccd8';
+              l.paint['fill-outline-color'] = '#94a3b8';
+            }
+            if (l.type === 'fill-extrusion' && l.id === 'building-3d') {
+              l.paint['fill-extrusion-color'] = '#c4ccd8';
+              l.paint['fill-extrusion-opacity'] = 0.85;
+            }
+            // Street Names & Road Labels (High-legibility enlarged lettering with bold halos)
+            if (l.type === 'symbol' && l['source-layer'] === 'transportation_name' && l.layout && l.layout['text-field']) {
+              if (!l.layout) l.layout = {};
+              l.layout['text-size'] = [
+                'interpolate', ['linear'], ['zoom'],
+                12, 12,
+                14, 15,
+                16, 17,
+                18, 20
+              ];
+              l.paint['text-color'] = '#0f172a';
+              l.paint['text-halo-color'] = '#ffffff';
+              l.paint['text-halo-width'] = 2.5;
+              l.paint['text-halo-blur'] = 0.5;
+            } else if (l.type === 'symbol' && l.paint) {
+              if (l.paint['text-color'] !== undefined) l.paint['text-color'] = '#1e293b';
+              if (l.paint['text-halo-color'] !== undefined) l.paint['text-halo-color'] = '#ffffff';
+            }
+          });
+          cachedPositronStyle = s;
+          return cachedPositronStyle;
+        } catch(e) {
+          console.warn('NOMAD: Falling back to OpenFreeMap Bright style URL', e);
+          return 'https://tiles.openfreemap.org/styles/bright';
+        }
       }
 
-      // 2. Natural Dark Navigation (Default)
-      if (theme.type === 'blueprint-dark') {
-        return 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+      // 2. Natural Dark Navigation: Midnight canvas, glowing electric cyan waterways, deep emerald pine forests, glowing white road outlines
+      if (cachedDarkMatterStyle) return cachedDarkMatterStyle;
+      try {
+        const res = await fetch('/api/map/style/liberty').catch(() => fetch('https://tiles.openfreemap.org/styles/liberty'));
+        if (!res.ok) throw new Error('Failed to fetch base style: ' + res.status);
+        const s = await res.json();
+        s.layers.forEach(l => {
+          if (!l.paint) l.paint = {};
+          // Background
+          if (l.type === 'background') {
+            l.paint['background-color'] = '#070b14';
+          }
+          // Shaded relief raster
+          if (l.type === 'raster') {
+            l.paint['raster-opacity'] = 0.05;
+          }
+          // Deep midnight water bodies
+          if (l.type === 'fill' && (l['source-layer'] === 'water' || l.id === 'water')) {
+            l.paint['fill-color'] = '#0a2238';
+            l.paint['fill-opacity'] = 0.95;
+          }
+          // Luminous electric cyan river/stream veins
+          if (l.type === 'line' && (l['source-layer'] === 'waterway' || l.id.includes('waterway'))) {
+            l.paint['line-color'] = '#00d4ff';
+            if (!l.paint['line-width']) l.paint['line-width'] = 2.5;
+          }
+          // Deep pine emerald green nature reserves & forests
+          if (l.type === 'fill' && (l.id.includes('park') || l.id.includes('wood') || l.id.includes('grass') || l['source-layer'] === 'park' || l['source-layer'] === 'landcover')) {
+            l.paint['fill-color'] = '#073b22';
+            l.paint['fill-opacity'] = 0.85;
+            if (l.paint['fill-outline-color']) l.paint['fill-outline-color'] = '#0d5c36';
+          }
+          if (l.type === 'line' && l.id === 'park_outline') {
+            l.paint['line-color'] = '#0d5c36';
+          }
+          // High-visibility glowing white road outline casings
+          if (l.type === 'line' && l.id.includes('casing')) {
+            l.paint['line-color'] = '#f8fafc';
+            if (l.paint['line-opacity'] !== undefined) l.paint['line-opacity'] = 1;
+          }
+          // Dark charcoal-navy road bed fills
+          if (l.type === 'line' && l['source-layer'] === 'transportation' && !l.id.includes('casing')) {
+            l.paint['line-color'] = '#0f172a';
+          }
+          // Midnight slate-navy buildings with crisp borders
+          if (l.type === 'fill' && l.id === 'building') {
+            l.paint['fill-color'] = '#182436';
+            l.paint['fill-outline-color'] = '#334155';
+          }
+          if (l.type === 'fill-extrusion' && l.id === 'building-3d') {
+            l.paint['fill-extrusion-color'] = '#182436';
+            l.paint['fill-extrusion-opacity'] = 0.85;
+          }
+          // Street Names & Road Labels (High-legibility enlarged lettering with bold halos)
+          if (l.type === 'symbol' && l['source-layer'] === 'transportation_name' && l.layout && l.layout['text-field']) {
+            if (!l.layout) l.layout = {};
+            l.layout['text-size'] = [
+              'interpolate', ['linear'], ['zoom'],
+              12, 12,
+              14, 15,
+              16, 17,
+              18, 20
+            ];
+            l.paint['text-color'] = '#f8fafc';
+            l.paint['text-halo-color'] = '#030712';
+            l.paint['text-halo-width'] = 2.5;
+            l.paint['text-halo-blur'] = 0.5;
+          } else if (l.type === 'symbol' && l.paint) {
+            if (l.paint['text-color'] !== undefined) l.paint['text-color'] = '#cbd5e1';
+            if (l.paint['text-halo-color'] !== undefined) l.paint['text-halo-color'] = '#070b14';
+          }
+        });
+        cachedDarkMatterStyle = s;
+        return cachedDarkMatterStyle;
+      } catch(e) {
+        console.warn('NOMAD: Falling back to OpenFreeMap Dark style URL', e);
+        return 'https://tiles.openfreemap.org/styles/dark';
+      }
+    };
+
+    async function getMapStyleObject(theme) {
+      if (theme && theme.url) return theme.url;
+
+      if (theme && theme.type === 'blueprint-light') {
+        return MAP_RASTER_STYLES.light;
       }
 
-      return 'https://tiles.openfreemap.org/styles/liberty';
+      return MAP_RASTER_STYLES.dark;
     }
 
     let rawTempF = null;
@@ -3989,10 +4150,44 @@
         window.KineticConsole.init(mapCard);
       }
 
+      // Step 1: Ensure MapLibre GL is ready
+      if (typeof window.maplibregl === 'undefined') {
+        console.warn('NOMAD Tracer [Step 1]: maplibregl not yet loaded, waiting 150ms...');
+        setTimeout(initMap, 150);
+        return;
+      }
+      console.log('NOMAD Tracer [Step 1]: maplibregl library loaded successfully.');
+
+      // Step 2: Verify WebGL Support
+      try {
+        const testCanvas = document.createElement('canvas');
+        const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+        if (!gl) {
+          console.error('NOMAD Tracer [Step 2]: WebGL NOT supported in this environment!');
+          if (mapCard) {
+            const errDiv = document.createElement('div');
+            errDiv.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ff3b30;font-size:12px;z-index:20;background:rgba(0,0,0,0.85);text-align:center;padding:12px;';
+            errDiv.innerText = 'WebGL hardware acceleration unavailable in current webview context.';
+            mapCard.appendChild(errDiv);
+          }
+          return;
+        }
+        console.log('NOMAD Tracer [Step 2]: WebGL context validated successfully.');
+      } catch (glErr) {
+        console.warn('NOMAD Tracer [Step 2]: WebGL probe error:', glErr);
+      }
+
+      // Step 3: Check Container Geometry
+      const mapEl = document.getElementById('map');
+      if (!mapEl) {
+        console.error('NOMAD Tracer [Step 3]: #map element not found in DOM!');
+        return;
+      }
+      console.log(`NOMAD Tracer [Step 3]: #map container found. Dimensions: ${mapEl.clientWidth}x${mapEl.clientHeight}px`);
+
       const initialTheme = mapThemes[currentThemeIndex];
       if (initialTheme.type === 'kinetic-starfield') {
         if (mapCard) mapCard.classList.add('is-starfield-mode');
-        const mapEl = document.getElementById('map');
         if (mapEl) mapEl.style.display = 'none';
         if (window.KineticConsole) {
           if (initialTheme.subMode) {
@@ -4003,6 +4198,9 @@
         if (isAutoCyclingFidgets && !autoCycleTicker) {
           startFidgetAutoCycleTimer(true);
         }
+      } else {
+        if (mapCard) mapCard.classList.remove('is-starfield-mode');
+        if (mapEl) mapEl.style.display = 'block';
       }
 
       if (mapCard) {
@@ -4022,13 +4220,17 @@
 
       updateCompassAndVehicleOrientation(currentHeading);
 
+      // Step 4: Map Instantiation with Bulletproof Styles
+      const initialCenter = (lastLon !== null && lastLat !== null) ? [lastLon, lastLat] : [-71.2424, 42.3936];
+      console.log(`NOMAD Tracer [Step 4]: Instantiating MapLibre at center: [${initialCenter[0]}, ${initialCenter[1]}]`);
+
       try {
         const styleObj = await getMapStyleObject(initialTheme);
         activeLoadedMapStyleType = initialTheme.type;
         map = new maplibregl.Map({
           container: 'map',
           style: styleObj,
-          center: [-71.2356, 42.3765],
+          center: initialCenter,
           zoom: 16.0,
           bearing: 0,
           pitch: currentPitch,
@@ -4037,31 +4239,40 @@
           refreshExpiredTiles: false,
           attributionControl: false
         });
+        window.map = map;
+        console.log('NOMAD: MapLibre vector map initialized successfully.');
       } catch (err) {
         console.warn('NOMAD: Fallback initializing map with raw OpenFreeMap style URL', err);
         activeLoadedMapStyleType = 'fallback';
         map = new maplibregl.Map({
           container: 'map',
           style: 'https://tiles.openfreemap.org/styles/liberty',
-          center: [-71.2356, 42.3765],
+          center: initialCenter,
           zoom: 16.0,
           bearing: 0,
           pitch: currentPitch,
           attributionControl: false
         });
+        window.map = map;
       }
 
+      // Step 5: Lifecycle & Error Listeners
       map.on('error', (e) => {
-        console.warn('NOMAD: MapLibre tile/render notice:', e);
+        console.warn('NOMAD: MapLibre notice/error:', e?.error?.message || e);
       });
 
       map.on('load', () => { 
+        window.map = map;
+        hasReportedLoad = true;
+        console.log('NOMAD Tracer [Step 6]: map.on("load") triggered successfully!');
         syncMapPadding();
         map.resize();
+        map.triggerRepaint();
         
         // Resilient WebGL context loss recovery for mobile Safari / WebKit
         const canvas = map.getCanvas();
         if (canvas) {
+          console.log(`NOMAD Tracer [Step 6]: WebGL canvas attached. Buffer size: ${canvas.width}x${canvas.height}`);
           canvas.addEventListener('webglcontextlost', (e) => {
             e.preventDefault();
             console.warn('NOMAD: WebGL context lost. Recovering...');
@@ -4898,7 +5109,6 @@
 
         if (map) {
           try {
-            map.setCenter([st.lon, st.lat]);
             map.resize();
           } catch (_) {}
         }
@@ -4919,7 +5129,7 @@
         const cz = document.getElementById('county-zip');
         if (cz) cz.innerText = st.countyZipString;
       }
-      if (st.altitudeFeet) {
+      if (st.altitudeFeet !== undefined && st.altitudeFeet !== null) {
         const el = document.getElementById('elevation');
         if (el) el.innerText = `Elevation: ${st.altitudeFeet.toLocaleString()} ft`;
       }
@@ -4927,9 +5137,27 @@
         const ll = document.getElementById('lat-lon');
         if (ll) ll.innerText = st.latLonString;
       }
-      if (st.temperatureF !== null) {
+      if (st.temperatureF !== null && st.temperatureF !== undefined) {
         rawTempF = st.temperatureF;
         renderTemperature();
+      }
+      if (st.humidityPercent !== null && st.humidityPercent !== undefined) {
+        const hEl = document.getElementById('humidity-val');
+        if (hEl) hEl.innerText = `${st.humidityPercent}%`;
+      }
+      if (st.uvIndex !== null && st.uvIndex !== undefined) {
+        const uvEl = document.getElementById('uv-val');
+        if (uvEl) uvEl.innerText = `${st.uvIndex}`;
+      }
+      if (st.pressureInHg) {
+        const pEl = document.getElementById('pressure-val');
+        if (pEl) pEl.innerText = `${st.pressureInHg}in`;
+      }
+      if (st.weatherText && st.weatherText !== '--') {
+        const wDesc = document.getElementById('weather-desc');
+        if (wDesc) {
+          wDesc.innerHTML = `<div class="weather-desc-container">${st.weatherText}</div>`;
+        }
       }
       if (st.heading !== null) {
         updateCompassAndVehicleOrientation(st.heading);
